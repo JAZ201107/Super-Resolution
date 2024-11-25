@@ -28,7 +28,7 @@ def train(
     start = time.time()
 
     with tqdm(total=len(train_loader)) as t:
-        t.set_description(desc=f"{epoch}/{epochs}", refresh=False)
+        t.set_description(desc=f"Epoch: [{epoch}/{epochs}]", refresh=False)
         for i, (lr_imgs, hr_imgs) in enumerate(train_loader):
             # if i < 7703:
             #     continue

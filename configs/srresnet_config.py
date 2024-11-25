@@ -20,7 +20,7 @@ __C.MODEL.n_blocks = 16  # number of residual blocks
 # ---------------------------------- LEARNING ------------------------------------------
 __C.LEARNING = CN()
 __C.LEARNING.checkpoint = None  # path to model checkpoint, None if none
-__C.LEARNING.batch_size = 16  # batch size
+__C.LEARNING.batch_size = 64  # batch size
 __C.LEARNING.start_epoch = 0  # start at this epoch
 __C.LEARNING.iterations = 1e6  # number of training iterations
 __C.LEARNING.workers = 4  # number of workers for loading data in the DataLoader
