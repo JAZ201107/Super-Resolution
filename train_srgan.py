@@ -1,152 +1,7 @@
-from dataclasses import dataclass
+from .configs.srgan_config import get_config
+from utils import *
 
-
-@dataclass
-class SRGanConfig:
-    # Data parameters
-    data_folder = "./"  # folder with JSON data files
-    crop_size = 96  # crop size of target HR images
-    scaling_factor = 4  # the scaling factor for the generator; the input LR images will be downsampled from the target HR images by this factor
-
-    # Generator parameters
-    large_kernel_size_g = 9  # kernel size of the first and last convolutions which transform the inputs and outputs
-    small_kernel_size_g = 3  # kernel size of all convolutions in-between, i.e. those in the residual and subpixel convolutional blocks
-    n_channels_g = 64  # number of channels in-between, i.e. the input and output channels for the residual and subpixel convolutional blocks
-    n_blocks_g = 16  # number of residual blocks
-    srresnet_checkpoint = "./checkpoint_srresnet.pth.tar"  # filepath of the trained SRResNet checkpoint used for initialization
-
-    # Discriminator parameters
-    kernel_size_d = 3  # kernel size in all convolutional blocks
-    n_channels_d = 64  # number of output channels in the first convolutional block, after which it is doubled in every 2nd block thereafter
-    n_blocks_d = 8  # number of convolutional blocks
-    fc_size_d = 1024  # size of the first fully connected layer
-
-    # Learning parameters
-    checkpoint = None  # path to model (SRGAN) checkpoint, None if none
-    batch_size = 16  # batch size
-    start_epoch = 0  # start at this epoch
-    iterations = 2e5  # number of training iterations
-    workers = 4  # number of workers for loading data in the DataLoader
-    vgg19_i = 5  # the index i in the definition for VGG loss; see paper or models.py
-    vgg19_j = 4  # the index j in the definition for VGG loss; see paper or models.py
-    beta = 1e-3  # the coefficient to weight the adversarial loss in the perceptual loss
-    print_freq = 500  # print training status once every __ batches
-    lr = 1e-4  # learning rate
-    grad_clip = None  # clip if gradients are exploding
-
-    # Default device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    cudnn.benchmark = True
-
-
-def main():
-    if checkpoint is None:
-        # Generator
-        generator = Generator(
-            large_kernel_size=large_kernel_size_g,
-            small_kernel_size=small_kernel_size_g,
-            n_channels=n_channels_g,
-            n_blocks=n_blocks_g,
-            scaling_factor=scaling_factor,
-        )
-
-        # Initialize generator network with pretrained SRResNet
-        generator.initialize_with_srresnet(srresnet_checkpoint=srresnet_checkpoint)
-
-        # Initialize generator's optimizer
-        optimizer_g = torch.optim.Adam(
-            params=filter(lambda p: p.requires_grad, generator.parameters()), lr=lr
-        )
-
-        # Discriminator
-        discriminator = Discriminator(
-            kernel_size=kernel_size_d,
-            n_channels=n_channels_d,
-            n_blocks=n_blocks_d,
-            fc_size=fc_size_d,
-        )
-
-        # Initialize discriminator's optimizer
-        optimizer_d = torch.optim.Adam(
-            params=filter(lambda p: p.requires_grad, discriminator.parameters()), lr=lr
-        )
-    else:
-        checkpoint = torch.load(checkpoint)
-        start_epoch = checkpoint["epoch"] + 1
-        generator = checkpoint["generator"]
-        discriminator = checkpoint["discriminator"]
-        optimizer_g = checkpoint["optimizer_g"]
-        optimizer_d = checkpoint["optimizer_d"]
-        print("\nLoaded checkpoint from epoch %d.\n" % (checkpoint["epoch"] + 1))
-
-    # Truncated VGG19 network to be used in the loss calculation
-    truncated_vgg19 = TruncatedVGG19(i=vgg19_i, j=vgg19_j)
-    truncated_vgg19.eval()
-
-    # Loss functions
-    content_loss_criterion = nn.MSELoss()
-    adversarial_loss_criterion = nn.BCEWithLogitsLoss()
-
-    # Move to default device
-    generator = generator.to(device)
-    discriminator = discriminator.to(device)
-    truncated_vgg19 = truncated_vgg19.to(device)
-    content_loss_criterion = content_loss_criterion.to(device)
-    adversarial_loss_criterion = adversarial_loss_criterion.to(device)
-
-    # Custom dataloaders
-    train_dataset = SRDataset(
-        data_folder,
-        split="train",
-        crop_size=crop_size,
-        scaling_factor=scaling_factor,
-        lr_img_type="imagenet-norm",
-        hr_img_type="imagenet-norm",
-    )
-    train_loader = torch.utils.data.DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=workers,
-        pin_memory=True,
-    )
-
-    # Total number of epochs to train for
-    epochs = int(iterations // len(train_loader) + 1)
-
-    # Epochs
-    for epoch in range(start_epoch, epochs):
-
-        # At the halfway point, reduce learning rate to a tenth
-        if epoch == int((iterations / 2) // len(train_loader) + 1):
-            adjust_learning_rate(optimizer_g, 0.1)
-            adjust_learning_rate(optimizer_d, 0.1)
-
-        # One epoch's training
-        train(
-            train_loader=train_loader,
-            generator=generator,
-            discriminator=discriminator,
-            truncated_vgg19=truncated_vgg19,
-            content_loss_criterion=content_loss_criterion,
-            adversarial_loss_criterion=adversarial_loss_criterion,
-            optimizer_g=optimizer_g,
-            optimizer_d=optimizer_d,
-            epoch=epoch,
-        )
-
-        # Save checkpoint
-        torch.save(
-            {
-                "epoch": epoch,
-                "generator": generator,
-                "discriminator": discriminator,
-                "optimizer_g": optimizer_g,
-                "optimizer_d": optimizer_d,
-            },
-            "checkpoint_srgan.pth.tar",
-        )
+from model import Generator, Discriminator, TruncatedVGG19
 
 
 def train(
@@ -287,5 +142,123 @@ def train(
     )  # free some memory since their histories may be stored
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Train SRGAN")
+    parser.add_argument(
+        "--checkpoint", type=str, default=None, help="path to model (SRGAN) checkpoint"
+    )
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    main()
+    # Handle Configuration
+    config = get_config()
+    args, args_list = parse_args()
+    config.merge_from_file(args.CONFIG)
+    config.merge_from_list(args_list)
+    save_config(config, os.path.join(config.checkpoint, "srgan_config.yaml"))
+
+    checkpoint = config.LEARNING.checkpoint
+    if checkpoint is None:
+        generator = Generator(
+            large_kernel_size=config.GENERATOR.large_kernel_size_g,
+            small_kernel_size=config.GENERATOR.small_kernel_size_g,
+            n_channels=config.GENERATOR.n_channels_g,
+            n_blocks=config.GENERATOR.n_blocks_g,
+            scaling_factor=config.DATA.scaling_factor,
+        )
+        generator.load_weight(config.GENERATOR.srresnet_checkpoint)
+
+        optimizer_g = torch.optim.AdamW(
+            params=filter(lambda p: p.requires_grad, generator.parameters()),
+            lr=config.LEARNING.lr,
+        )
+
+        discriminator = Discriminator(
+            kernel_size=config.DISCRIMINATOR.kernel_size_d,
+            n_channels=config.DISCRIMINATOR.n_channels_d,
+            n_blocks=config.DISCRIMINATOR.n_blocks_d,
+            fc_size=config.DISCRIMINATOR.fc_size_d,
+        )
+
+        optimizer_d = torch.optim.AdamW(
+            params=filter(lambda p: p.requires_grad, discriminator.parameters()),
+            lr=config.LEARNING.lr,
+        )
+    else:
+        checkpoint = torch.load(checkpoint)
+        start_epoch = checkpoint["epoch"] + 1
+        generator = checkpoint["generator"]
+        discriminator = checkpoint["discriminator"]
+        optimizer_g = checkpoint["optimizer_g"]
+        optimizer_d = checkpoint["optimizer_d"]
+        print("\nLoaded checkpoint from epoch %d.\n" % (checkpoint["epoch"] + 1))
+
+    truncated_vgg19 = TruncatedVGG19(
+        i=config.LEARNING.vgg19_i, j=config.LEARNING.vgg19_j
+    )
+    truncated_vgg19.eval()
+
+    # Loss Function
+    content_loss_criterion = nn.MSELoss
+    adversarial_loss_criterion = nn.BCEWithLogitsLoss()
+
+    # Move to default device
+    generator = generator.to(config.DEVICE.device)
+    discriminator = discriminator.to(config.DEVICE.device)
+    truncated_vgg19 = truncated_vgg19.to(config.DEVICE.device)
+    content_loss_criterion = content_loss_criterion.to(config.DEVICE.device)
+    adversarial_loss_criterion = adversarial_loss_criterion.to(config.DEVICE.device)
+
+    # Custom dataloaders
+    train_dataset = SRDataset(
+        config.DATA.data_folder,
+        split="train",
+        crop_size=config.DATA.crop_size,
+        scaling_factor=config.DATA.scaling_factor,
+        lr_img_type="imagenet-norm",
+        hr_img_type="imagenet-norm",
+    )
+
+    train_loader = torch.utils.data.DataLoader(
+        train_dataset,
+        batch_size=config.LEARNING.batch_size,
+        shuffle=True,
+        num_workers=config.LEARNING.workers,
+        pin_memory=True,
+    )
+
+    # Total number of epochs to train for
+    epochs = int(config.LEARNING.iterations // len(train_loader) + 1)
+
+    # Epochs
+    for epoch in range(start_epoch, epochs):
+        # At the halfway point, reduce learning rate to a tenth
+        if epoch == int((config.LEARNING.iterations / 2) // len(train_loader) + 1):
+            adjust_learning_rate(optimizer_g, 0.1)
+            adjust_learning_rate(optimizer_d, 0.1)
+
+        # One epoch's training
+        train(
+            train_loader=train_loader,
+            generator=generator,
+            discriminator=discriminator,
+            truncated_vgg19=truncated_vgg19,
+            content_loss_criterion=content_loss_criterion,
+            adversarial_loss_criterion=adversarial_loss_criterion,
+            optimizer_g=optimizer_g,
+            optimizer_d=optimizer_d,
+            epoch=epoch,
+        )
+
+        # Save checkpoint
+        torch.save(
+            {
+                "epoch": epoch,
+                "generator": generator,
+                "discriminator": discriminator,
+                "optimizer_g": optimizer_g,
+                "optimizer_d": optimizer_d,
+            },
+            os.path.join(config.checkpoint, f"latest_checkpoint.pth.tar"),
+        )

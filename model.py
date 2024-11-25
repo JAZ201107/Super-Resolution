@@ -5,8 +5,6 @@ import math
 
 
 # Padding = kernel_size // 2 to keep the spatial dimensions the same
-
-
 class ConvolutionalBlock(nn.Module):
     def __init__(
         self,
@@ -204,7 +202,7 @@ class Generator(nn.Module):
             scaling_factor=scaling_factor,
         )
 
-    def _init_weight(self, checkpoint_path):
+    def load_weight(self, checkpoint_path):
         checkpoint = torch.load(checkpoint_path)
         self.load_state_dict(checkpoint["state_dict"])
 

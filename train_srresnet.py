@@ -8,68 +8,8 @@ from datasets import SRDataset
 from dataclasses import dataclass
 
 from utils import *
-
-
-@dataclass
-class SRResnetConfig:
-    data_folder = "./"
-    crop_size = 96
-    scaling_factor = 4
-
-    # Model Parameters
-    large_kernel_size = 9  # kernel size of the first and last convolutions which transform the inputs and outputs
-    small_kernel_size = 3  # kernel size of all convolutions in-between, i.e. those in the residual and subpixel convolutional blocks
-    n_channels = 64  # number of channels in-between, i.e. the input and output channels for the residual and subpixel convolutional blocks
-    n_blocks = 16  # number of residual blocks
-
-    # Learning parameters
-    checkpoint = None  # path to model checkpoint, None if none
-    batch_size = 16  # batch size
-    start_epoch = 0  # start at this epoch
-    iterations = 1e6  # number of training iterations
-    workers = 4  # number of workers for loading data in the DataLoader
-    print_freq = 500  # print training status once every __ batches
-    lr = 1e-4  # learning rate
-    grad_clip = None  # clip if gradients are exploding
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    cudnn.benchmark = True
-
-
-def main():
-    if checkpoint is None:
-        model = SRResNet(
-            large_kernel_size=large_kernel_size,
-            small_kernel_size=small_kernel_size,
-            n_channels=n_channels,
-            n_blocks=n_blocks,
-            scaling_factor=scaling_factor,
-        )
-
-        optimizer = torch.optim.AdamW(
-            params=filter(lambda p: p.requires_grad, model.parameters()), lr=lr
-        )
-    else:
-        pass
-
-    model = model.to(device)
-    criterion = nn.MSELoss().to(device)
-
-    train_dataset = SRDataset(
-        data_folder,
-        split="train",
-        crop_size=crop_size,
-        scaling_factor=scaling_factor,
-        lr_img_type="imagenet-norm",
-        hr_img_type="[-1, 1]",
-    )
-    train_loader = torch.utils.data.DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=num_workers,
-        pin_memory=True,
-    )
+from .configs.srresnet_config import get_config
+from torch.utils.tensorboard import SummaryWriter
 
 
 def train(train_loader, model, criterion, optimizer, epoch):
@@ -127,5 +67,81 @@ def train(train_loader, model, criterion, optimizer, epoch):
     )  # free some memory since their histories may be stored
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Train Super Resolution Models")
+    parse.add_argument(
+        "--CONFIG",
+        type=str,
+        default="./config/config.yaml",
+        help="path to config file",
+    )
+
+    parse.add_argument(
+        "--experiment_name",
+        type=str,
+        default="srresnet",
+        help="path to data folder",
+    )
+
+    args = parser.parse_args()
+    arg_list = []
+    for arg, value in vars(args).item():
+        if value is not None:
+            arg_list.extend([arg, str(value)])
+
+    return arg, arg_list
+
+
 if __name__ == "__main__":
-    main()
+    # Set TensorBoard
+    BASE_DIR = "./experiment/runs"
+
+    arg, arg_list = parse_args()
+
+    # Merge Configuration
+    config = get_config()
+    config.merge_from_list(arg_list)
+    config.merge_from_file(config.CONFIG)
+    EXPERIMENT_NAME = os.path.join(BASE_DIR, config.experiment_name)
+    os.mkdir(EXPERIMENT_NAME)
+
+    save_config(config, os.path.join(EXPERIMENT_NAME, "config_srresnet.yaml"))
+
+    writer = SummaryWriter(log_dir=EXPERIMENT_NAME)
+
+    checkpoint = config.LEARNING.checkpoint
+    if checkpoint is None:
+        model = SRResNet(
+            large_kernel_size=config.MODEL.large_kernel_size,
+            small_kernel_size=config.MODEL.small_kernel_size,
+            n_channels=config.MODEL.n_channels,
+            n_blocks=config.MODEL.n_blocks,
+            scaling_factor=config.DATA.scaling_factor,
+        )
+
+        optimizer = torch.optim.AdamW(
+            params=filter(lambda p: p.requires_grad, model.parameters()), lr=lr
+        )
+    else:
+        pass
+
+    model = model.to(device)
+    criterion = nn.MSELoss().to(device)
+
+    train_dataset = SRDataset(
+        config.DATA.data_folder,
+        split="train",
+        crop_size=config.DATA.crop_size,
+        scaling_factor=config.DATA.scaling_factor,
+        lr_img_type="imagenet-norm",
+        hr_img_type="[-1, 1]",
+    )
+    train_loader = torch.utils.data.DataLoader(
+        train_dataset,
+        batch_size=config.DATA.batch_size,
+        shuffle=True,
+        num_workers=config.DATA.num_workers,
+        pin_memory=True,
+    )
+
+    writer.close()
