@@ -135,7 +135,7 @@ if __name__ == "__main__":
     if args.config is not None:
         config.merge_from_file(config.CONFIG)
     EXPERIMENT_NAME = os.path.join(
-        BASE_DIR, f"{config.EXPERIENCE.NAME}{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+        BASE_DIR, f"{config.EXPERIENCE.NAME}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     )
     os.makedirs(EXPERIMENT_NAME, exist_ok=True)
     save_config(config, os.path.join(EXPERIMENT_NAME, "config_srresnet.yaml"))
