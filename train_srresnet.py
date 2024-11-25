@@ -14,7 +14,9 @@ import argparse
 from datetime import datetime
 
 
-def train(train_loader, model, criterion, optimizer, epoch, config, print_freq):
+def train(
+    train_loader, model, criterion, optimizer, epoch, epochs, config, print_freq, writer
+):
     device = config.DEVICE.device
     model.train()
 
@@ -24,47 +26,60 @@ def train(train_loader, model, criterion, optimizer, epoch, config, print_freq):
 
     start = time.time()
 
-    for i, (lr_imgs, hr_imgs) in enumerate(train_loader):
-        # if i < 7703:
-        #     continue
-        data_time.update(time.time() - start)
+    with tqdm(total=len(dataloader)) as t:
+        for i, (lr_imgs, hr_imgs) in enumerate(train_loader):
+            # if i < 7703:
+            #     continue
+            data_time.update(time.time() - start)
 
-        lr_imgs = lr_imgs.to(device)
-        hr_imgs = hr_imgs.to(device)
+            lr_imgs = lr_imgs.to(device)
+            hr_imgs = hr_imgs.to(device)
 
-        sr_imgs = model(lr_imgs)
+            sr_imgs = model(lr_imgs)
 
-        loss = criterion(sr_imgs, hr_imgs)
+            loss = criterion(sr_imgs, hr_imgs)
 
-        # Optimizer
-        optimizer.zero_grad()
-        loss.backward()
+            # Optimizer
+            optimizer.zero_grad()
+            loss.backward()
 
-        # if grad_clip is not None:
-        #     clip_gradient(optimizer, grad_clip)
+            # if grad_clip is not None:
+            #     clip_gradient(optimizer, grad_clip)
 
-        optimizer.step()
+            optimizer.step()
 
-        losses.update(loss.item(), lr_imgs.size(0))
-        batch_time.update(time.time() - start)
+            losses.update(loss.item(), lr_imgs.size(0))
+            batch_time.update(time.time() - start)
 
-        start = time.time()
+            start = time.time()
 
-        # Print status
-        if i % print_freq == 0:
-            print(
-                "Epoch: [{0}][{1}/{2}]----"
-                "Batch Time {batch_time.val:.3f} ({batch_time.avg:.3f})----"
-                "Data Time {data_time.val:.3f} ({data_time.avg:.3f})----"
-                "Loss {loss.val:.4f} ({loss.avg:.4f})".format(
-                    epoch,
-                    i,
-                    len(train_loader),
-                    batch_time=batch_time,
-                    data_time=data_time,
-                    loss=losses,
+            # Print status
+            if i % print_freq == 0:
+                print(
+                    "Epoch: [{0}/{1}][{2}/{3}]----"
+                    "Batch Time {batch_time.val:.3f} ({batch_time.avg:.3f})----"
+                    "Data Time {data_time.val:.3f} ({data_time.avg:.3f})----"
+                    "Loss {loss.val:.4f} ({loss.avg:.4f})".format(
+                        epoch,
+                        epochs,
+                        i,
+                        len(train_loader),
+                        batch_time=batch_time,
+                        data_time=data_time,
+                        loss=losses,
+                    )
                 )
+            writer.add_scalar(
+                "Loss", losses.val, global_step=epoch * len(train_loader) + i
             )
+            writer.add_scalar(
+                "Loss/avg", losses.avg, global_step=epoch * len(train_loader) + i
+            )
+            t.set_postfix(epoch=f"{epoch}/{epochs}")
+            t.set_postfix(loss="{:05.3f}".format(losses.val))
+            t.set_postfix(loss_avg="{:05.3f}".format(losses.avg))
+            t.update()
+
     del (
         lr_imgs,
         hr_imgs,
@@ -162,10 +177,20 @@ if __name__ == "__main__":
 
     epochs = int(config.LEARNING.iterations // len(train_loader) + 1)
     for epoch in range(epochs):
-        train(train_loader, model, criterion, optimizer, epoch, config, args.print_freq)
-        print("SAving Model")
+        train(
+            train_loader,
+            model,
+            criterion,
+            optimizer,
+            epoch,
+            epochs,
+            config,
+            args.print_freq,
+            writer,
+        )
         torch.save(
             {"epoch": epoch, "model": model, "optimizer": optimizer},
             os.path.join(EXPERIMENT_NAME, "checkpoint_srresnet.pth.tar"),
         )
+        print("Saving Model...")
     writer.close()
