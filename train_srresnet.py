@@ -8,11 +8,14 @@ from datasets import SRDataset
 from dataclasses import dataclass
 
 from utils import *
-from .configs.srresnet_config import get_config
+from configs.srresnet_config import get_config
 from torch.utils.tensorboard import SummaryWriter
+import argparse
+from datetime import datetime
 
 
-def train(train_loader, model, criterion, optimizer, epoch):
+def train(train_loader, model, criterion, optimizer, epoch, config, print_freq):
+    device = config.DEVICE.device
     model.train()
 
     batch_time = AverageMeter()
@@ -22,21 +25,23 @@ def train(train_loader, model, criterion, optimizer, epoch):
     start = time.time()
 
     for i, (lr_imgs, hr_imgs) in enumerate(train_loader):
+        # if i < 7703:
+        #     continue
         data_time.update(time.time() - start)
 
         lr_imgs = lr_imgs.to(device)
         hr_imgs = hr_imgs.to(device)
 
-        src_imgs = model(lr_imgs)
+        sr_imgs = model(lr_imgs)
 
-        loss = criterion(src_imgs, hr_imgs)
+        loss = criterion(sr_imgs, hr_imgs)
 
         # Optimizer
         optimizer.zero_grad()
         loss.backward()
 
-        if grad_clip is not None:
-            clip_gradient(optimizer, grad_clip)
+        # if grad_clip is not None:
+        #     clip_gradient(optimizer, grad_clip)
 
         optimizer.step()
 
@@ -69,45 +74,54 @@ def train(train_loader, model, criterion, optimizer, epoch):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train Super Resolution Models")
-    parse.add_argument(
-        "--CONFIG",
+    parser.add_argument(
+        "--config",
         type=str,
-        default="./config/config.yaml",
+        default=None,
         help="path to config file",
     )
 
-    parse.add_argument(
-        "--experiment_name",
+    parser.add_argument(
+        "--EXPERIENCE.NAME",
         type=str,
         default="srresnet",
         help="path to data folder",
     )
 
+    parser.add_argument(
+        "--print_freq",
+        type=int,
+        default=100,
+        help="Frequence of logging",
+    )
+
     args = parser.parse_args()
     arg_list = []
-    for arg, value in vars(args).item():
-        if value is not None:
+    for arg, value in vars(args).items():
+        if value is not None and arg.isupper():
             arg_list.extend([arg, str(value)])
 
-    return arg, arg_list
+    return args, arg_list
 
 
 if __name__ == "__main__":
     # Set TensorBoard
     BASE_DIR = "./experiment/runs"
 
-    arg, arg_list = parse_args()
+    args, arg_list = parse_args()
 
     # Merge Configuration
     config = get_config()
     config.merge_from_list(arg_list)
-    config.merge_from_file(config.CONFIG)
-    EXPERIMENT_NAME = os.path.join(BASE_DIR, config.experiment_name)
-    os.mkdir(EXPERIMENT_NAME)
-
+    if args.config is not None:
+        config.merge_from_file(config.CONFIG)
+    EXPERIMENT_NAME = os.path.join(
+        BASE_DIR, f"{config.EXPERIENCE.NAME}{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    )
+    os.makedirs(EXPERIMENT_NAME, exist_ok=True)
     save_config(config, os.path.join(EXPERIMENT_NAME, "config_srresnet.yaml"))
 
-    writer = SummaryWriter(log_dir=EXPERIMENT_NAME)
+    writer = SummaryWriter(log_dir=os.path.join(EXPERIMENT_NAME))
 
     checkpoint = config.LEARNING.checkpoint
     if checkpoint is None:
@@ -120,13 +134,14 @@ if __name__ == "__main__":
         )
 
         optimizer = torch.optim.AdamW(
-            params=filter(lambda p: p.requires_grad, model.parameters()), lr=lr
+            params=filter(lambda p: p.requires_grad, model.parameters()),
+            lr=config.LEARNING.lr,
         )
     else:
         pass
 
-    model = model.to(device)
-    criterion = nn.MSELoss().to(device)
+    model = model.to(config.DEVICE.device)
+    criterion = nn.MSELoss().to(config.DEVICE.device)
 
     train_dataset = SRDataset(
         config.DATA.data_folder,
@@ -136,12 +151,21 @@ if __name__ == "__main__":
         lr_img_type="imagenet-norm",
         hr_img_type="[-1, 1]",
     )
+
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
-        batch_size=config.DATA.batch_size,
+        batch_size=config.LEARNING.batch_size,
         shuffle=True,
-        num_workers=config.DATA.num_workers,
+        num_workers=config.LEARNING.workers,
         pin_memory=True,
     )
 
+    epochs = int(config.LEARNING.iterations // len(train_loader) + 1)
+    for epoch in range(epochs):
+        train(train_loader, model, criterion, optimizer, epoch, config, args.print_freq)
+        print("SAving Model")
+        torch.save(
+            {"epoch": epoch, "model": model, "optimizer": optimizer},
+            os.path.join(EXPERIMENT_NAME, "checkpoint_srresnet.pth.tar"),
+        )
     writer.close()

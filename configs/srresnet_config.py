@@ -1,11 +1,12 @@
-from yacs import CfgNode as CN
+from yacs.config import CfgNode as CN
+import torch
 
 
 __C = CN()
 
 # ---------------------------------- DATA ------------------------------------------
 __C.DATA = CN()
-__C.DATA.data_folder = "./data"  # folder with JSON data files
+__C.DATA.data_folder = "/root/autodl-tmp/data"  # folder with JSON data files
 __C.DATA.crop_size = 96  # crop size of target HR images
 __C.DATA.scaling_factor = 4  # the scaling factor for the generator; the input LR images will be downsampled from the target HR images by this factor
 
@@ -29,5 +30,14 @@ __C.LEARNING.grad_clip = None  # clip if gradients are exploding
 
 # ---------------------------------- DEFAULT DEVICE ------------------------------------------
 __C.DEVICE = CN()
-__C.DEVICE.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-__C.DEVICE.cudnn.benchmark = True
+__C.DEVICE.device = "cuda" if torch.cuda.is_available() else "cpu"
+__C.DEVICE.cudnn_benchmark = True
+
+
+# ------- Experiemce ----
+__C.EXPERIENCE = CN()
+__C.EXPERIENCE.NAME = None
+
+
+def get_config():
+    return __C.clone()
