@@ -28,6 +28,7 @@ def train(
     start = time.time()
 
     with tqdm(total=len(train_loader)) as t:
+        t.set_description(desc=f"{epoch}/{epochs}", refresh=False)
         for i, (lr_imgs, hr_imgs) in enumerate(train_loader):
             # if i < 7703:
             #     continue
@@ -54,31 +55,32 @@ def train(
 
             start = time.time()
 
-            # Print status
-            if i % print_freq == 0:
-                print(
-                    "Epoch: [{0}/{1}][{2}/{3}]----"
-                    "Batch Time {batch_time.val:.3f} ({batch_time.avg:.3f})----"
-                    "Data Time {data_time.val:.3f} ({data_time.avg:.3f})----"
-                    "Loss {loss.val:.4f} ({loss.avg:.4f})".format(
-                        epoch,
-                        epochs,
-                        i,
-                        len(train_loader),
-                        batch_time=batch_time,
-                        data_time=data_time,
-                        loss=losses,
-                    )
-                )
+            # # Print status
+            # if i % print_freq == 0:
+            #     print(
+            #         "Epoch: [{0}/{1}][{2}/{3}]----"
+            #         "Batch Time {batch_time.val:.3f} ({batch_time.avg:.3f})----"
+            #         "Data Time {data_time.val:.3f} ({data_time.avg:.3f})----"
+            #         "Loss {loss.val:.4f} ({loss.avg:.4f})".format(
+            #             epoch,
+            #             epochs,
+            #             i,
+            #             len(train_loader),
+            #             batch_time=batch_time,
+            #             data_time=data_time,
+            #             loss=losses,
+            #         )
+            #     )
             writer.add_scalar(
                 "Loss", losses.val, global_step=epoch * len(train_loader) + i
             )
             writer.add_scalar(
                 "Loss/avg", losses.avg, global_step=epoch * len(train_loader) + i
             )
-            t.set_postfix(epoch=f"{epoch}/{epochs}")
-            t.set_postfix(loss="{:05.3f}".format(losses.val))
-            t.set_postfix(loss_avg="{:05.3f}".format(losses.avg))
+            t.set_postfix(
+                loss="{:05.3f}".format(losses.val),
+                loss_avg="{:05.3f}".format(losses.avg),
+            )
             t.update()
 
     del (
