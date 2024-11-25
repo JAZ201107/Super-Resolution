@@ -13,6 +13,7 @@ from torch.utils.tensorboard import SummaryWriter
 import argparse
 from datetime import datetime
 from tqdm import tqdm
+import logging
 
 
 def train(
@@ -56,21 +57,21 @@ def train(
             start = time.time()
 
             # # Print status
-            # if i % print_freq == 0:
-            #     print(
-            #         "Epoch: [{0}/{1}][{2}/{3}]----"
-            #         "Batch Time {batch_time.val:.3f} ({batch_time.avg:.3f})----"
-            #         "Data Time {data_time.val:.3f} ({data_time.avg:.3f})----"
-            #         "Loss {loss.val:.4f} ({loss.avg:.4f})".format(
-            #             epoch,
-            #             epochs,
-            #             i,
-            #             len(train_loader),
-            #             batch_time=batch_time,
-            #             data_time=data_time,
-            #             loss=losses,
-            #         )
-            #     )
+            if i % print_freq == 0:
+                logging.info(
+                    "Epoch: [{0}/{1}][{2}/{3}]----"
+                    "Batch Time {batch_time.val:.3f} ({batch_time.avg:.3f})----"
+                    "Data Time {data_time.val:.3f} ({data_time.avg:.3f})----"
+                    "Loss {loss.val:.4f} ({loss.avg:.4f})".format(
+                        epoch,
+                        epochs,
+                        i,
+                        len(train_loader),
+                        batch_time=batch_time,
+                        data_time=data_time,
+                        loss=losses,
+                    )
+                )
             writer.add_scalar(
                 "Loss", losses.val, global_step=epoch * len(train_loader) + i
             )
@@ -140,6 +141,7 @@ if __name__ == "__main__":
     save_config(config, os.path.join(EXPERIMENT_NAME, "config_srresnet.yaml"))
 
     writer = SummaryWriter(log_dir=os.path.join(EXPERIMENT_NAME))
+    set_logger(os.path.join(EXPERIMENT_NAME, "train.log"))
 
     checkpoint = config.LEARNING.checkpoint
     if checkpoint is None:
@@ -161,6 +163,7 @@ if __name__ == "__main__":
     model = model.to(config.DEVICE.device)
     criterion = nn.MSELoss().to(config.DEVICE.device)
 
+    logging.info("Loading the datasets...")
     train_dataset = SRDataset(
         config.DATA.data_folder,
         split="train",
@@ -177,8 +180,11 @@ if __name__ == "__main__":
         num_workers=config.LEARNING.workers,
         pin_memory=True,
     )
+    logging.info("- done.")
 
     epochs = int(config.LEARNING.iterations // len(train_loader) + 1)
+
+    logging.info("Starting training for {} epoch(s)".format(epochs))
     for epoch in range(epochs):
         train(
             train_loader,
