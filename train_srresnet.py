@@ -12,7 +12,7 @@ from configs.srresnet_config import get_config
 from torch.utils.tensorboard import SummaryWriter
 import argparse
 from datetime import datetime
-import tqdm as tqdm
+from tqdm import tqdm
 
 
 def train(
