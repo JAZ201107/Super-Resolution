@@ -73,7 +73,7 @@ class SubPixelConvolutionalBlock(nn.Module):
 
 class ResidualBlock(nn.Module):
     def __init__(self, kernel_size=3, n_channels=64):
-        super().__init___()
+        super().__init__()
 
         self.conv1 = ConvolutionalBlock(
             in_channels=n_channels,
