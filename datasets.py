@@ -7,6 +7,16 @@ import os
 from PIL import Image
 import random
 
+rgb_weights = torch.FloatTensor([65.481, 128.553, 24.966])
+imagenet_mean = torch.FloatTensor([0.485, 0.456, 0.406]).unsqueeze(1).unsqueeze(2)
+imagenet_std = torch.FloatTensor([0.229, 0.224, 0.225]).unsqueeze(1).unsqueeze(2)
+imagenet_mean_cuda = (
+    torch.FloatTensor([0.485, 0.456, 0.406]).unsqueeze(0).unsqueeze(2).unsqueeze(3)
+)
+imagenet_std_cuda = (
+    torch.FloatTensor([0.229, 0.224, 0.225]).unsqueeze(0).unsqueeze(2).unsqueeze(3)
+)
+
 
 def convert_image(img, source, target):
     assert source in {"pil", "[0, 1]", "[-1, 1]"}, (
