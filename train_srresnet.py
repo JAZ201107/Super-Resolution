@@ -27,7 +27,7 @@ def train(
 
     start = time.time()
 
-    with tqdm(total=len(dataloader)) as t:
+    with tqdm(total=len(train_loader)) as t:
         for i, (lr_imgs, hr_imgs) in enumerate(train_loader):
             # if i < 7703:
             #     continue
