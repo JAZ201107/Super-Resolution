@@ -16,9 +16,7 @@ from tqdm import tqdm
 import logging
 
 
-def train(
-    train_loader, model, criterion, optimizer, epoch, epochs, config, print_freq, writer
-):
+def train(train_loader, model, criterion, optimizer, epoch, epochs, config, writer):
     device = config.DEVICE.device
     model.train()
 
@@ -46,8 +44,8 @@ def train(
             optimizer.zero_grad()
             loss.backward()
 
-            # if grad_clip is not None:
-            #     clip_gradient(optimizer, grad_clip)
+            if config.LEARNING.grad_clip is not None:
+                clip_gradient(optimizer, config.LEARNING.grad_clip)
 
             optimizer.step()
 
@@ -57,7 +55,7 @@ def train(
             start = time.time()
 
             # # Print status
-            if i % print_freq == 0:
+            if i % config.LEARNING.print_freq == 0:
                 logging.info(
                     "Epoch: [{0}/{1}][{2}/{3}]----"
                     "Batch Time {batch_time.val:.3f} ({batch_time.avg:.3f})----"
@@ -133,7 +131,7 @@ if __name__ == "__main__":
     config = get_config()
     config.merge_from_list(arg_list)
     if args.config is not None:
-        config.merge_from_file(config.CONFIG)
+        config.merge_from_file(args.config)
     EXPERIMENT_NAME = os.path.join(
         BASE_DIR, f"{config.EXPERIENCE.NAME}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     )
@@ -157,8 +155,16 @@ if __name__ == "__main__":
             params=filter(lambda p: p.requires_grad, model.parameters()),
             lr=config.LEARNING.lr,
         )
+        start_epoch = 0
     else:
-        pass
+        logging.info(
+            f"Loading weight from the checkpoint {config.LEARNING.checkpoint} at {start_epoch} epoch"
+        )
+        checkpoint = torch.load(checkpoint)
+        start_epoch = checkpoint["epoch"] + 1
+        model = checkpoint["model"]
+        optimizer = checkpoint["optimizer"]
+        logging.info("- done.")
 
     model = model.to(config.DEVICE.device)
     criterion = nn.MSELoss().to(config.DEVICE.device)
@@ -185,7 +191,7 @@ if __name__ == "__main__":
     epochs = int(config.LEARNING.iterations // len(train_loader) + 1)
 
     logging.info("Starting training for {} epoch(s)".format(epochs))
-    for epoch in range(epochs):
+    for epoch in range(start_epoch, epochs):
         train(
             train_loader,
             model,
@@ -194,12 +200,10 @@ if __name__ == "__main__":
             epoch,
             epochs,
             config,
-            args.print_freq,
             writer,
         )
-        torch.save(
+        save_checkpoint(
             {"epoch": epoch, "model": model, "optimizer": optimizer},
             os.path.join(EXPERIMENT_NAME, "checkpoint_srresnet.pth.tar"),
         )
-        print("Saving Model...")
     writer.close()
